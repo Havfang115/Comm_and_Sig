@@ -1,4 +1,5 @@
 # OFDM simulation with 16QAM and multipath fading channel. 
+# Constellation digrams for Tx and Rx are shown.
 # The BER performance under different SNR levels is plotted.
 
 import numpy as np
@@ -22,28 +23,24 @@ attenuation = np.array([1, 0.5, 0.25])
 attenuation = attenuation / np.linalg.norm(attenuation)  # Normalize total path power to 1
 
 ## Plotting function for 16QAM constellation
-def plot_constellation(symbols, title, sample_size=500):
+def plot_constellation(ax, symbols, title, sample_size=500):
 
     # Sample symbols (if total points < sample_size, take all)
     sample_indices = np.random.choice(len(symbols), min(sample_size, len(symbols)), replace=False)
     sampled_symbols = symbols[sample_indices]
     
     # Plot constellation
-    plt.figure(figsize=(7, 7))
-    plt.scatter(np.real(sampled_symbols), np.imag(sampled_symbols), 
-                s=15, alpha=0.7, color='#1f77b4')
-    plt.title(title, fontsize=12, pad=10)
-    plt.xlabel('In-phase (I)', fontsize=10)
-    plt.ylabel('Quadrature (Q)', fontsize=10)
-    plt.grid(True, which='both', linestyle='--', alpha=0.5)
-    plt.axis('equal')
-    plt.tight_layout() # Auto adjust subplot params
-    plt.show()
-
+    ax.scatter(np.real(sampled_symbols), np.imag(sampled_symbols), s=15, alpha=0.7, color='#1f77b4')
+    ax.set_title(title, fontsize=12, pad=10)
+    ax.set_xlabel('In-phase (I)', fontsize=10)
+    ax.set_ylabel('Quadrature (Q)', fontsize=10)
+    ax.grid(True, which='both', linestyle='--', alpha=0.5)
+    ax.axis('equal')
 
 
 ## Transmitter function (16QAM)
 def transmitter():
+
     # Generate random bits
     total_bits = N_sub * Bps * N_symbols
     Tx_bits = np.random.randint(0, 2, total_bits)
@@ -128,14 +125,18 @@ def receiver(Rx_signal):
 if __name__ == "__main__":
     
     # Choose SNR=10dB for constellation plot
-    Sample_SNR_dB = 10
+    Sample_SNR_dB = 100
     Tx_signal, Tx_bits, Tx_bit_quad, Tx_symbols = transmitter()
     Rx_signal = channel(Tx_signal, Sample_SNR_dB)
     Rx_bits, Rx_symbols = receiver(Rx_signal)
+
     # Plot constellation Tx_symbols
-    plot_constellation(Tx_symbols, title=f"Transmitted 16QAM Constellation (SNR={Sample_SNR_dB}dB)")
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 7))
+    plot_constellation(ax1, Tx_symbols, title=f"Transmitted 16QAM Constellation (SNR={Sample_SNR_dB}dB)")
     # Plot constellation Rx_symbols
-    plot_constellation(Rx_symbols, title=f"Received 16QAM Constellation (SNR={Sample_SNR_dB}dB)")
+    plot_constellation(ax2, Rx_symbols, title=f"Received 16QAM Constellation (SNR={Sample_SNR_dB}dB)")
+    plt.tight_layout()
+    plt.show()
 
     BER_list = []
     SER_list = []
