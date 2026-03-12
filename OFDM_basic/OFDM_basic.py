@@ -1,6 +1,10 @@
+# OFDM basic simulation using QPSK modulation and AWGN and multipath fading channel. 
+# The BER performance under different SNR levels is plotted.
+
 import numpy as np
 import matplotlib.pyplot as plt
 
+np.random.seed(42) 
 
 ## System parameters
 N_sub = 64 # Number of subcarriers
@@ -9,12 +13,13 @@ Order = 4 # QPSK-4 symbols
 Bps = 2 # QPSK 2bit per symbol
 SNR_dB_range = range(5, 16) # SNR range from 5 to 15 dB
 N_symbols = 1000 # Number of symbols
+num_iter = 10
 
 # Multipath channel parameters
 num_paths = 3 # Number of multipath components
 delay = np.array([0, 2, 4]) # Delay in samples
 attenuation = np.array([1, 0.5, 0.25]) # Attenuation factors
-
+attenuation = attenuation / np.linalg.norm(attenuation)
 
 ## Transmitter function
 def transmitter():
@@ -41,81 +46,78 @@ def transmitter():
     
     return Tx_signal, Tx_bits, bit_pair
 
-
-## Channel function with multipath fading
 def channel(Tx_signal, SNR_dB):
     # Add multipath fading
     faded_signal = np.zeros_like(Tx_signal, dtype=complex)
     for i in range(num_paths):
         delayed_signal = np.zeros_like(Tx_signal, dtype=complex)
-        if delay[i] < len(Tx_signal):
-            delayed_signal[delay[i]:] = Tx_signal[:-delay[i]] if delay[i] > 0 else Tx_signal
+        delayed_signal[delay[i]:] = Tx_signal[:-delay[i]] if delay[i] > 0 else Tx_signal
         faded_signal += attenuation[i] * delayed_signal
     
     # Add AWGN noise
     signal_power = np.mean(np.abs(faded_signal)**2)
     SNR_linear = 10**(SNR_dB/10)
     noise_power = signal_power / SNR_linear
-    noise = np.sqrt(noise_power) * (np.random.randn(len(faded_signal)) + 1j * np.random.randn(len(faded_signal)))
+    noise = np.sqrt(noise_power/2) * (np.random.randn(len(faded_signal)) + 1j * np.random.randn(len(faded_signal)))
     Rx_signal = faded_signal + noise
-    
+
     return Rx_signal
 
-
-## Receiver function
 def receiver(Rx_signal):
     # Reshape received signal into time domain blocks and remove cyclic prefix
     Rx_time = Rx_signal.reshape(N_symbols, N_sub + Cp_len)
     Rx_time = Rx_time[:, Cp_len:]
     # Convert time domain blocks to frequency domain
     Rx_blocks = np.fft.fft(Rx_time, axis=1)
-    
+
     # Demodulation: Minimum distance demodulation
     Rx_symbols = Rx_blocks.flatten()
-    Rx_bits = np.zeros((N_symbols * N_sub, 2), dtype=int)
-    # Unnormalize symbols power
-    Rx_bits_scaled = Rx_symbols * np.sqrt(2)
+     # Unnormalize symbols power
+    Rx_symbols_unnorm = Rx_symbols * np.sqrt(2)
+    Rx_bit_pairs = np.zeros((len(Rx_symbols), 2), dtype=int)
     # Demodulate bits
-    Rx_bits[:,0] = (np.real(Rx_bits_scaled) > 0).astype(int)
-    Rx_bits[:,1] = (np.imag(Rx_bits_scaled) > 0).astype(int)
-    
-    return Rx_bits
+    Rx_bit_pairs[:,0] = (np.real(Rx_symbols_unnorm) > 0).astype(int)
+    Rx_bit_pairs[:,1] = (np.imag(Rx_symbols_unnorm) > 0).astype(int)
 
+    return Rx_bit_pairs
 
 ## Main simulation
 BER_list = []
 SER_list = []
 
-print("--- OFDM Simulation with Multipath Fading ---")
-print(f"Number of subcarriers: {N_sub}")
-print(f"Cyclic prefix length: {Cp_len}")
-print(f"Number of multipath components: {num_paths}")
-print(f"Delay profile: {delay} samples")
-print(f"Attenuation profile: {attenuation}")
+print("--- OFDM Simulation with 16QAM and Multipath Fading ---")
+print(f"Subcarriers: {N_sub}, CP Length: {Cp_len}, Modulation: 16QAM")
+print(f"Multipath: {num_paths} paths, Delay: {delay}, Attenuation (normalized): {attenuation}")
+print(f"SNR Range: {SNR_dB_range.start}~{SNR_dB_range.stop-1} dB, Iterations per SNR: {num_iter}")
 print()
 
 for SNR_dB in SNR_dB_range:
-    # Transmit
-    Tx_signal, Tx_bits, bit_pair = transmitter()
-    
-    # Channel with multipath fading and AWGN
-    Rx_signal = channel(Tx_signal, SNR_dB)
-    
-    # Receive
-    Rx_bits = receiver(Rx_signal)
-    
-    # Calculate BER and SER
-    error_bits = np.sum(Rx_bits != bit_pair)
-    error_symbols = np.sum(np.any(Rx_bits != bit_pair, axis=1))
-    total_bits = N_sub * Bps * N_symbols
-    BER = error_bits / total_bits
-    SER = error_symbols / N_symbols
-    
+    ber_temp, ser_temp = [], []
+
+    # Iterate for multiple simulations under the same SNR
+    for _ in range(num_iter):
+        # Transmit
+        Tx_signal, Tx_bits, Tx_bit_pairs = transmitter()
+        # Channel with multipath fading and AWGN
+        Rx_signal = channel(Tx_signal, SNR_dB)
+        # Receive   
+        Rx_bit_pairs = receiver(Rx_signal)
+        
+        # Calculate BER and SER
+        error_bits = np.sum(Rx_bit_pairs != Tx_bit_pairs)
+        error_symbols = np.sum(np.any(Rx_bit_pairs != Tx_bit_pairs, axis=1))
+        total_bits = N_sub * Bps * N_symbols
+        total_symbols = N_symbols * N_sub
+        
+        ber_temp.append(error_bits / total_bits)
+        ser_temp.append(error_symbols / total_symbols)
+
+    # Average BER and SER over multiple iterations
+    BER = np.mean(ber_temp)
+    SER = np.mean(ser_temp)
     BER_list.append(BER)
     SER_list.append(SER)
-    
     print(f"SNR_dB: {SNR_dB}, BER: {BER:.6f}, SER: {SER:.6f}")
-
 
 ## Plot BER performance
 plt.figure(figsize=(10, 6))
