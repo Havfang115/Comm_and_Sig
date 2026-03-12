@@ -21,6 +21,26 @@ delay = np.array([0, 2, 4])          # Delay in samples
 attenuation = np.array([1, 0.5, 0.25])
 attenuation = attenuation / np.linalg.norm(attenuation)  # Normalize total path power to 1
 
+## Plotting function for 16QAM constellation
+def plot_constellation(symbols, title, sample_size=500):
+
+    # Sample symbols (if total points < sample_size, take all)
+    sample_indices = np.random.choice(len(symbols), min(sample_size, len(symbols)), replace=False)
+    sampled_symbols = symbols[sample_indices]
+    
+    # Plot constellation
+    plt.figure(figsize=(7, 7))
+    plt.scatter(np.real(sampled_symbols), np.imag(sampled_symbols), 
+                s=15, alpha=0.7, color='#1f77b4')
+    plt.title(title, fontsize=12, pad=10)
+    plt.xlabel('In-phase (I)', fontsize=10)
+    plt.ylabel('Quadrature (Q)', fontsize=10)
+    plt.grid(True, which='both', linestyle='--', alpha=0.5)
+    plt.axis('equal')
+    plt.tight_layout() # Auto adjust subplot params
+    plt.show()
+
+
 
 ## Transmitter function (16QAM)
 def transmitter():
@@ -48,7 +68,7 @@ def transmitter():
     Tx_time = np.hstack((Tx_time[:, -Cp_len:], Tx_time))  # Add CP
     Tx_signal = Tx_time.flatten()
     
-    return Tx_signal, Tx_bits, bit_quad
+    return Tx_signal, Tx_bits, bit_quad, Tx_symbols
 
 
 ## Channel function (unchanged, with multipath + AWGN)
@@ -60,7 +80,7 @@ def channel(Tx_signal, SNR_dB):
         delayed_signal[delay[i]:] = Tx_signal[:-delay[i]] if delay[i] > 0 else Tx_signal
         faded_signal += attenuation[i] * delayed_signal
     
-    # Add AWGN (complex noise, real/imaginary parts each have noise_power/2)
+    # Add AWGN noise
     signal_power = np.mean(np.abs(faded_signal)**2)
     SNR_linear = 10**(SNR_dB/10)
     noise_power = signal_power / SNR_linear
@@ -70,15 +90,15 @@ def channel(Tx_signal, SNR_dB):
     return Rx_signal
 
 
-## Receiver function (16QAM demodulation)
+## Receiver function
 def receiver(Rx_signal):
-    # OFDM demodulation: remove CP + FFT
+    # Demodulate OFDM signal: remove CP + FFT
     Rx_time = Rx_signal.reshape(N_symbols, N_sub + Cp_len)
     Rx_time = Rx_time[:, Cp_len:]  # Remove CP
     Rx_blocks = np.fft.fft(Rx_time, axis=1)
     Rx_symbols = Rx_blocks.flatten()
     
-    # Unnormalize power (multiply by sqrt(5))
+    # Unormalize received symbols power to match transmitter
     Rx_symbols_scaled = Rx_symbols * np.sqrt(5)
     
     # Threshold-based amplitude demodulation for I/Q
@@ -101,53 +121,65 @@ def receiver(Rx_signal):
     # Combine I and Q bits to get 4-bit symbols
     Rx_bits = np.hstack((I_bits, Q_bits))
     
-    return Rx_bits
+    return Rx_bits, Rx_symbols
 
 
 ## Main simulation
-BER_list = []
-SER_list = []
-
-print("--- OFDM Simulation with 16QAM and Multipath Fading ---")
-print(f"Subcarriers: {N_sub}, CP Length: {Cp_len}, Modulation: 16QAM")
-print(f"Multipath: {num_paths} paths, Delay: {delay}, Attenuation (normalized): {attenuation}")
-print(f"SNR Range: {SNR_dB_range.start}~{SNR_dB_range.stop-1} dB, Iterations per SNR: {num_iter}")
-print()
-
-for SNR_dB in SNR_dB_range:
-    ber_temp, ser_temp = [], []
-    for _ in range(num_iter):
-        # Transmit -> Channel -> Receive
-        Tx_signal, Tx_bits, Tx_bit_quad = transmitter()
-        Rx_signal = channel(Tx_signal, SNR_dB)
-        Rx_bits = receiver(Rx_signal)
-        
-        # Calculate BER and SER
-        error_bits = np.sum(Rx_bits != Tx_bit_quad)
-        error_symbols = np.sum(np.any(Rx_bits != Tx_bit_quad, axis=1))
-        total_bits = N_sub * Bps * N_symbols
-        total_symbols = N_symbols * N_sub
-        
-        ber_temp.append(error_bits / total_bits)
-        ser_temp.append(error_symbols / total_symbols)
+if __name__ == "__main__":
     
-    # Average over iterations
-    avg_BER = np.mean(ber_temp)
-    avg_SER = np.mean(ser_temp)
-    BER_list.append(avg_BER)
-    SER_list.append(avg_SER)
+    # Choose SNR=10dB for constellation plot
+    Sample_SNR_dB = 10
+    Tx_signal, Tx_bits, Tx_bit_quad, Tx_symbols = transmitter()
+    Rx_signal = channel(Tx_signal, Sample_SNR_dB)
+    Rx_bits, Rx_symbols = receiver(Rx_signal)
+    # Plot constellation Tx_symbols
+    plot_constellation(Tx_symbols, title=f"Transmitted 16QAM Constellation (SNR={Sample_SNR_dB}dB)")
+    # Plot constellation Rx_symbols
+    plot_constellation(Rx_symbols, title=f"Received 16QAM Constellation (SNR={Sample_SNR_dB}dB)")
+
+    BER_list = []
+    SER_list = []
+
+    print("--- OFDM Simulation with 16QAM and Multipath Fading ---")
+    print(f"Subcarriers: {N_sub}, CP Length: {Cp_len}, Modulation: 16QAM")
+    print(f"Multipath: {num_paths} paths, Delay: {delay}, Attenuation (normalized): {attenuation}")
+    print(f"SNR Range: {SNR_dB_range.start}~{SNR_dB_range.stop-1} dB, Iterations per SNR: {num_iter}")
+    print()
+
+    for SNR_dB in SNR_dB_range:
+        ber_temp, ser_temp = [], []
+        for _ in range(num_iter):
+            # Transmit -> Channel -> Receive
+            Tx_signal, Tx_bits, Tx_bit_quad, _ = transmitter()
+            Rx_signal = channel(Tx_signal, SNR_dB)
+            Rx_bits, _ = receiver(Rx_signal)
+            
+            # Calculate BER and SER
+            error_bits = np.sum(Rx_bits != Tx_bit_quad)
+            error_symbols = np.sum(np.any(Rx_bits != Tx_bit_quad, axis=1))  
+            total_bits = N_sub * Bps * N_symbols
+            total_symbols = N_symbols * N_sub
+        
+            ber_temp.append(error_bits / total_bits)
+            ser_temp.append(error_symbols / total_symbols)
     
-    print(f"SNR: {SNR_dB:2d} dB | Avg BER: {avg_BER:.6f} | Avg SER: {avg_SER:.6f}")
+        # Average over iterations
+        avg_BER = np.mean(ber_temp)
+        avg_SER = np.mean(ser_temp)
+        BER_list.append(avg_BER)
+        SER_list.append(avg_SER)
+    
+        print(f"SNR: {SNR_dB:2d} dB | Avg BER: {avg_BER:.6f} | Avg SER: {avg_SER:.6f}")
 
 
-## Plot BER performance
-plt.figure(figsize=(10, 6))
-plt.plot(SNR_dB_range, BER_list, marker='o', linewidth=2, label='BER')
-plt.semilogy()
-plt.title('OFDM System Performance (16QAM, Multipath Fading)')
-plt.xlabel('SNR (dB)')
-plt.ylabel('Bit Error Rate (BER)')
-plt.grid(True, which="both", ls="-", alpha=0.3)
-plt.legend()
-plt.tight_layout()
-plt.show()
+    ## Plot BER performance
+    plt.figure(figsize=(10, 6))
+    plt.plot(SNR_dB_range, BER_list, marker='o', linewidth=2, label='BER')
+    plt.semilogy()
+    plt.title('OFDM System Performance (16QAM, Multipath Fading)')
+    plt.xlabel('SNR (dB)')
+    plt.ylabel('Bit Error Rate (BER)')
+    plt.grid(True, which="both", ls="-", alpha=0.3)
+    plt.legend()
+    plt.tight_layout()
+    plt.show()
