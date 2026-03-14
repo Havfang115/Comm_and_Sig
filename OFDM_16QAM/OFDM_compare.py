@@ -16,10 +16,14 @@ SNR_dB_range = range(5, 21)  # SNR range: 5~20 dB (16QAM needs higher SNR)
 N_symbols = 1000    # Number of OFDM symbols
 num_iter = 10       # Number of iterations per SNR (for stable results)
 
-# Multipath channel parameters (power normalized)
-num_paths = 3
-delay = np.array([0, 2, 4])          # Delay in samples
-attenuation = np.array([1, 0.5, 0.25])
+# TDL channel parameters (power normalized)
+Fs = 30.72e6        # 采样率（5G NR 30.72 MHz）
+Ts = 1/Fs  
+TDL_taps_delay = np.array([0, 30, 70]) * 1e-9        # Delay in samples
+TDL_taps_power_dB = np.array([0, -7, -14])
+num_paths = len(TDL_taps_delay)
+delay = np.round(TDL_taps_delay / Ts).astype(int)
+attenuation = 10**(TDL_taps_power_dB / 20)  # Convert power to linear scale
 attenuation = attenuation / np.linalg.norm(attenuation)  # Normalize total path power to 1
 
 ## Plotting function for 16QAM constellation
@@ -71,11 +75,12 @@ def transmitter():
 ## Channel function (unchanged, with multipath + AWGN)
 def channel(Tx_signal, SNR_dB):
     # Add multipath fading
+    fade_coeffs = (np.random.randn(num_paths, len(Tx_signal)) + 1j * np.random.randn(num_paths, len(Tx_signal))) / np.sqrt(2)
     faded_signal = np.zeros_like(Tx_signal, dtype=complex)
     for i in range(num_paths):
         delayed_signal = np.zeros_like(Tx_signal, dtype=complex)
         delayed_signal[delay[i]:] = Tx_signal[:-delay[i]] if delay[i] > 0 else Tx_signal
-        faded_signal += attenuation[i] * delayed_signal
+        faded_signal += attenuation[i] * fade_coeffs[i] * delayed_signal
     
     # Add AWGN noise
     signal_power = np.mean(np.abs(faded_signal)**2)
@@ -141,9 +146,9 @@ if __name__ == "__main__":
     BER_list = []
     SER_list = []
 
-    print("--- OFDM Simulation with 16QAM and Multipath Fading ---")
+    print("--- OFDM Simulation with 16QAM and TDL-C Fading ---")
     print(f"Subcarriers: {N_sub}, CP Length: {Cp_len}, Modulation: 16QAM")
-    print(f"Multipath: {num_paths} paths, Delay: {delay}, Attenuation (normalized): {attenuation}")
+    print(f"TDL-C Channel: {num_paths} taps, Delay (samples): {delay}, Attenuation (normalized): {attenuation}")
     print(f"SNR Range: {SNR_dB_range.start}~{SNR_dB_range.stop-1} dB, Iterations per SNR: {num_iter}")
     print()
 
