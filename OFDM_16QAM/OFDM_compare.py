@@ -4,35 +4,40 @@
 
 import numpy as np
 import matplotlib.pyplot as plt
+from scipy.interpolate import interp1d
 
-np.random.seed(42)  # 固定随机种子，保证结果可复现
+np.random.seed(42)
 
-## System parameters
+## System parameters (Updated for 5G NR - 20 MHz Bandwidth)
 # OFDM parameters
-N_sub = 64                   # Number of subcarriers
-Cp_len = 16                  # Length of cyclic prefix
+Fs = 30.72e6                 # Sampling rate (30.72 MHz)
+SCS = 15e3                   # Subcarrier Spacing (15 kHz)
+N_sub = int(Fs / SCS)        # FFT Size: 2048 subcarriers
+N_used = 1272                # Active subcarriers (106 Resource Blocks * 12)
+Cp_len = 144                 # Length of cyclic prefix (Normal CP)
 Order = 16                   # 16QAM modulation
 Bps = 4                      # 4 bits per symbol (16QAM)
-SNR_dB_range = range(5, 21)  # SNR range: 5~20 dB (16QAM needs higher SNR)
-N_symbols = 1000             # Number of OFDM symbols
-num_iter = 10                # Number of iterations per SNR (for stable results)
+SNR_dB_range = range(5, 21)  
+N_symbols = 500             # REDUCED from 1000! (A 2048 FFT is computationally heavy)
+num_iter = 10                
 
-# Pilot signal
-Pilot_interval = 8 # Pilot interval (every 8 subcarriers)
-Pilot_value = 1 + 0j #
-# Generate pilot subcarrier indices (avoid DC and Nyquist)
-Pilot_indices = np.arange(1, N_sub, Pilot_interval)
-Data_indices = np.setdiff1d(np.arange(N_sub), np.concatenate(([0, N_sub//2], Pilot_indices)))
+# Pilot signal (Mimicking 5G DMRS spacing)
+Pilot_interval = 12 
+Pilot_value = np.sqrt(2) * (1 + 0j) 
 
-# TDL channel parameters (power normalized)
-Fs = 30.72e6        # Sampling rate (5G NR 30.72 MHz)
+# Generate active subcarrier indices (using the first 1272 valid subcarriers to keep interpolation stable)
+active_indices = np.arange(1, N_used + 1) 
+Pilot_indices = np.arange(1, N_used + 1, Pilot_interval)
+Data_indices = np.setdiff1d(active_indices, Pilot_indices)
+
+# 5G TDL-C Channel parameters (Nominal 300ns Delay Spread)
 Ts = 1/Fs  
-TDL_taps_delay = np.array([0, 30, 70]) * 1e-9        # Delay in samples
-TDL_taps_power_dB = np.array([0, -7, -14])
+TDL_taps_delay = np.array([0, 100, 300, 500]) * 1e-9        # Mimicking a 300ns RMS delay spread
+TDL_taps_power_dB = np.array([0, -2, -6, -10])              # Realistic exponential power decay
 num_paths = len(TDL_taps_delay)
 delay = np.round(TDL_taps_delay / Ts).astype(int)
-attenuation = 10**(TDL_taps_power_dB / 20)  # Convert power to linear scale
-attenuation = attenuation / np.linalg.norm(attenuation)  # Normalize total path power to 1
+attenuation = 10**(TDL_taps_power_dB / 20)  
+attenuation = attenuation / np.linalg.norm(attenuation)
 
 ## Plotting function for 16QAM constellation
 def plot_constellation(ax, symbols, title, sample_size=500):
@@ -70,7 +75,7 @@ def transmitter():
     
     # Generate 16QAM symbols and normalize average power to 1
     # Average power of 16QAM constellation: (1+1+9+9)/4 = 5
-    Tx_symbols = (I + 1j * Q) / np.sqrt(5)
+    Tx_symbols = (I + 1j * Q) / np.sqrt(10)
     Tx_blocks = np.zeros((N_symbols, N_sub), dtype=complex)
     Tx_symbols_reshaped = Tx_symbols.reshape(N_symbols, num_data_subcarriers)
     
@@ -110,31 +115,38 @@ def channel(Tx_signal, SNR_dB):
 
 
 ## Receiver function (fixed 16QAM mapping)
-def receiver(Rx_signal, Tx_blocks):
+def receiver(Rx_signal, Tx_blocks, SNR_dB):
+
     # Demodulate OFDM signal: remove CP + FFT
     Rx_time = Rx_signal.reshape(N_symbols, N_sub + Cp_len)
     Rx_time = Rx_time[:, Cp_len:]  # Remove CP
     Rx_blocks = np.fft.fft(Rx_time, axis=1)
     
-    # LS channel estimation (unchanged)
     H_est = np.zeros((N_symbols, N_sub), dtype=complex)
     for i in range(N_symbols):
         Rx_pilot = Rx_blocks[i, Pilot_indices]
         Tx_pilot = Tx_blocks[i, Pilot_indices]
         H_est_pilot = Rx_pilot / Tx_pilot
-        # Interpolate channel estimate for all subcarriers
-        H_est[i] = np.interp(np.arange(N_sub), Pilot_indices, H_est_pilot)
-    
-    # ZF frequency domain equalization (unchanged)
+        
+        interp_func = interp1d(Pilot_indices, H_est_pilot, kind='linear', fill_value='extrapolate')
+        H_est[i] = interp_func(np.arange(N_sub))
+
+    # Directly compute effective linear SNR for the MMSE formula
+    SNR_eff = 10**(SNR_dB / 10)
+
+    # MMSE equalization
     epsilon = 1e-6 # Regularization parameter to avoid division by zero
-    X_est_blocks = Rx_blocks / (H_est + epsilon)
+    H_conj = np.conj(H_est)
+    # MMSE formula: X_est = H_conj / (|H|^2 + 1/SNR) * Rx
+    MMSE_coeff = H_conj / (np.abs(H_est)**2 + 1/SNR_eff + epsilon)
+    X_est_blocks = Rx_blocks * MMSE_coeff
     X_est_data = X_est_blocks[:, Data_indices].flatten()
     
     # 16QAM standard constellation points (with normalized power)
     constellation_16QAM = np.array([-3-3j, -3-1j, -3+1j, -3+3j,
                                      -1-3j, -1-1j, -1+1j, -1+3j,
                                       1-3j,  1-1j,  1+1j,  1+3j,
-                                      3-3j,  3-1j,  3+1j,  3+3j])/np.sqrt(5)
+                                      3-3j,  3-1j,  3+1j,  3+3j])/np.sqrt(10)
     
     # Map 16QAM constellation points to 4-bit Gray codes
     idx_to_bits = {
@@ -145,12 +157,12 @@ def receiver(Rx_signal, Tx_blocks):
     }
     
     # ML demodulation (unchanged)
-    Rx_bits = []
-    for i in X_est_data:
-        distances = np.abs(i - constellation_16QAM)
-        min_idx = np.argmin(distances)
-        Rx_bits.append(idx_to_bits[min_idx])
-    Rx_bits = np.array(Rx_bits).flatten()
+    # Vectorized distance calculation
+    distances = np.abs(X_est_data[:, np.newaxis] - constellation_16QAM)
+    min_indices = np.argmin(distances, axis=1)
+    
+    # Map back to bits
+    Rx_bits = np.array([idx_to_bits[idx] for idx in min_indices]).flatten()
     Rx_symbols = X_est_data
 
     return Rx_bits, Rx_symbols
@@ -163,7 +175,7 @@ if __name__ == "__main__":
     Sample_SNR_dB = 15
     Tx_signal, _, _, Tx_symbols, Tx_blocks = transmitter()
     Rx_signal = channel(Tx_signal, Sample_SNR_dB)
-    Rx_bits, Rx_symbols = receiver(Rx_signal, Tx_blocks)
+    Rx_bits, Rx_symbols = receiver(Rx_signal, Tx_blocks, Sample_SNR_dB)
 
     # Plot constellation Tx_symbols
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 7))
@@ -188,7 +200,7 @@ if __name__ == "__main__":
             # Transmit -> Channel -> Receive
             Tx_signal, Tx_bits, Tx_bit_quad, _, Tx_blocks = transmitter()
             Rx_signal = channel(Tx_signal, SNR_dB)
-            Rx_bits, _ = receiver(Rx_signal, Tx_blocks)
+            Rx_bits, _ = receiver(Rx_signal, Tx_blocks, SNR_dB)
             
             # Calculate BER and SER
             error_bits = np.sum(Rx_bits != Tx_bits)
