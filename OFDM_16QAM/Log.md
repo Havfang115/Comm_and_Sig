@@ -36,3 +36,11 @@ Log:
 
 Thoughts:
 - The BER is fixed at around 0.17 when SNR is 20dB. The way to improve this is to add correction code like LDPC, which is the next step.
+
+## version 2.3
+Thoughts:
+- Adjusted pilot indices and use estimated noise in receiver (of course). Spend some time to make some other adjustments.
+- BER rate is 0.17 at SNR=20db, which is acceptable just from this raw transmission. I think to implement error correction code later.
+- But which to use? I'm thinking LDPC. Just because it's what's being used in real 5G cases. We'll see. 
+- Hopefully BER can drop significantly and then i can probably change from 16 QAM to 256QAM (such a big leap).
+- Oh, another thing is that the demodulation method needs a bit improvement. ML is quite simple.

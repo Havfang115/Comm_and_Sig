@@ -5,6 +5,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.interpolate import interp1d
+from scipy.interpolate import Akima1DInterpolator
 
 np.random.seed(42)
 
@@ -19,7 +20,7 @@ Order = 16                   # 16QAM modulation
 Bps = 4                      # 4 bits per symbol (16QAM)
 SNR_dB_range = range(5, 21)  
 N_symbols = 500             # REDUCED from 1000! (A 2048 FFT is computationally heavy)
-num_iter = 10                
+num_iter = 1
 
 # Pilot signal (Mimicking 5G DMRS spacing)
 Pilot_interval = 12 
@@ -28,6 +29,8 @@ Pilot_value = np.sqrt(2) * (1 + 0j)
 # Generate active subcarrier indices (using the first 1272 valid subcarriers to keep interpolation stable)
 active_indices = np.arange(1, N_used + 1) 
 Pilot_indices = np.arange(1, N_used + 1, Pilot_interval)
+if Pilot_indices[-1] != N_used:
+    Pilot_indices = np.append(Pilot_indices, N_used)
 Data_indices = np.setdiff1d(active_indices, Pilot_indices)
 
 # 5G TDL-C Channel parameters (Nominal 300ns Delay Spread)
@@ -115,32 +118,39 @@ def channel(Tx_signal, SNR_dB):
 
 
 ## Receiver function (fixed 16QAM mapping)
-def receiver(Rx_signal, Tx_blocks, SNR_dB):
+def receiver(Rx_signal, Tx_blocks):
 
     # Demodulate OFDM signal: remove CP + FFT
     Rx_time = Rx_signal.reshape(N_symbols, N_sub + Cp_len)
     Rx_time = Rx_time[:, Cp_len:]  # Remove CP
     Rx_blocks = np.fft.fft(Rx_time, axis=1)
     
-    H_est = np.zeros((N_symbols, N_sub), dtype=complex)
+    H_est = np.zeros((N_symbols, len(active_indices)), dtype=complex)
+    noise_power_est = np.zeros(N_symbols, dtype=complex)
     for i in range(N_symbols):
         Rx_pilot = Rx_blocks[i, Pilot_indices]
         Tx_pilot = Tx_blocks[i, Pilot_indices]
         H_est_pilot = Rx_pilot / Tx_pilot
         
-        interp_func = interp1d(Pilot_indices, H_est_pilot, kind='linear', fill_value='extrapolate')
-        H_est[i] = interp_func(np.arange(N_sub))
+        akima_real = Akima1DInterpolator(Pilot_indices, np.real(H_est_pilot))
+        akima_imag = Akima1DInterpolator(Pilot_indices, np.imag(H_est_pilot))
+        H_real = akima_real(active_indices)
+        H_imag = akima_imag(active_indices)
+        H_est[i] = H_real + 1j* H_imag
 
-    # Directly compute effective linear SNR for the MMSE formula
-    SNR_eff = 10**(SNR_dB / 10)
+        noise_est = Rx_pilot - H_est[i, Pilot_indices-1] * Tx_pilot
+        noise_power_est[i] = np.mean(np.abs(noise_est)**2)
+
+    # Estimate noise power
+    N0_est = np.mean(noise_power_est)
 
     # MMSE equalization
     epsilon = 1e-6 # Regularization parameter to avoid division by zero
     H_conj = np.conj(H_est)
     # MMSE formula: X_est = H_conj / (|H|^2 + 1/SNR) * Rx
-    MMSE_coeff = H_conj / (np.abs(H_est)**2 + 1/SNR_eff + epsilon)
-    X_est_blocks = Rx_blocks * MMSE_coeff
-    X_est_data = X_est_blocks[:, Data_indices].flatten()
+    MMSE_coeff = H_conj / (np.abs(H_est)**2 + N0_est + epsilon)
+    X_est_blocks = Rx_blocks[:,active_indices] * MMSE_coeff
+    X_est_data = X_est_blocks[:, Data_indices-1].flatten()
     
     # 16QAM standard constellation points (with normalized power)
     constellation_16QAM = np.array([-3-3j, -3-1j, -3+1j, -3+3j,
@@ -175,7 +185,7 @@ if __name__ == "__main__":
     Sample_SNR_dB = 15
     Tx_signal, _, _, Tx_symbols, Tx_blocks = transmitter()
     Rx_signal = channel(Tx_signal, Sample_SNR_dB)
-    Rx_bits, Rx_symbols = receiver(Rx_signal, Tx_blocks, Sample_SNR_dB)
+    Rx_bits, Rx_symbols = receiver(Rx_signal, Tx_blocks)
 
     # Plot constellation Tx_symbols
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 7))
@@ -200,7 +210,7 @@ if __name__ == "__main__":
             # Transmit -> Channel -> Receive
             Tx_signal, Tx_bits, Tx_bit_quad, _, Tx_blocks = transmitter()
             Rx_signal = channel(Tx_signal, SNR_dB)
-            Rx_bits, _ = receiver(Rx_signal, Tx_blocks, SNR_dB)
+            Rx_bits, _ = receiver(Rx_signal, Tx_blocks)
             
             # Calculate BER and SER
             error_bits = np.sum(Rx_bits != Tx_bits)
