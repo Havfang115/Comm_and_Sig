@@ -44,3 +44,9 @@ Thoughts:
 - But which to use? I'm thinking LDPC. Just because it's what's being used in real 5G cases. We'll see. 
 - Hopefully BER can drop significantly and then i can probably change from 16 QAM to 256QAM (such a big leap).
 - Oh, another thing is that the demodulation method needs a bit improvement. ML is quite simple.
+
+## version 2.4
+Thoughts:
+- In this version, I'll try to implement LDPC code. If failed i will choose simpler error correction code.
+- I'll change see if i can change the demodulation method a bit.
+- If the BER rate is low enough, i will try to change to 256QAM.
