@@ -1,7 +1,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy import linalg
-from MIMO_channel import generate_rayleigh_channel, generate_rician_channel, generate_correlated_channel
+from MIMO_channels import generate_rayleigh_channel, generate_rician_channel, generate_correlated_channel
 
 def mimo_capacity(H, snr_db):
     """
@@ -54,58 +54,59 @@ def ergodic_capacity(Nr, Nt, snr_db, channel_type='rayleigh', num_realizations=1
  
     return np.mean(capacities)
 
-# 绘制容量 vs SNR 曲线
-snr_range_db = np.arange(-10, 31, 2)  # SNR从-10dB到30dB
-configs = [(2, 2), (4, 4), (8, 8)]
-channel_types = ['rayleigh', 'rician', 'correlated']
-colors = ['b', 'g', 'r', 'c', 'm', 'y']
+if __name__ == "__main__":
+    # 绘制容量 vs SNR 曲线
+    snr_range_db = np.arange(-10, 31, 2)  # SNR从-10dB到30dB
+    configs = [(2, 2), (4, 4), (8, 8)]
+    channel_types = ['rayleigh', 'rician', 'correlated']
+    colors = ['b', 'g', 'r', 'c', 'm', 'y']
  
-plt.figure(figsize=(12, 8))
+    plt.figure(figsize=(12, 8))
  
-# 子图1：不同天线配置，瑞利信道
-ax1 = plt.subplot(2, 2, 1)
-for idx, (Nr, Nt) in enumerate(configs):
-    capacities = [ergodic_capacity(Nr, Nt, snr, 'rayleigh', 500) for snr in snr_range_db]
-    ax1.plot(snr_range_db, capacities, marker='o', label=f'{Nr}x{Nt}', color=colors[idx])
-ax1.set_xlabel('SNR (dB)')
-ax1.set_ylabel('Ergodic capacity (bps/Hz)')
-ax1.set_title('Capacity vs SNR for different antenna configurations (Rayleigh channel)')
-ax1.grid(True, alpha=0.3)
-ax1.legend()
+    # 子图1：不同天线配置，瑞利信道
+    ax1 = plt.subplot(2, 2, 1)
+    for idx, (Nr, Nt) in enumerate(configs):
+        capacities = [ergodic_capacity(Nr, Nt, snr, 'rayleigh', 500) for snr in snr_range_db]
+        ax1.plot(snr_range_db, capacities, marker='o', label=f'{Nr}x{Nt}', color=colors[idx])
+    ax1.set_xlabel('SNR (dB)')
+    ax1.set_ylabel('Ergodic capacity (bps/Hz)')
+    ax1.set_title('Capacity vs SNR for different antenna configurations (Rayleigh channel)')
+    ax1.grid(True, alpha=0.3)
+    ax1.legend()
  
-# 子图2：固定4x4配置，不同信道模型
-ax2 = plt.subplot(2, 2, 2)
-Nr, Nt = 4, 4
-for idx, chan_type in enumerate(channel_types):
-    capacities = [ergodic_capacity(Nr, Nt, snr, chan_type, 500) for snr in snr_range_db]
-    ax2.plot(snr_range_db, capacities, marker='s', label=chan_type, color=colors[idx])
-ax2.set_xlabel('SNR (dB)')
-ax2.set_ylabel('Ergodic capacity (bps/Hz)')
-ax2.set_title('Capacity vs SNR for 4x4 MIMO under different channel models')
-ax2.grid(True, alpha=0.3)
-ax2.legend()
+    # 子图2：固定4x4配置，不同信道模型
+    ax2 = plt.subplot(2, 2, 2)
+    Nr, Nt = 4, 4
+    for idx, chan_type in enumerate(channel_types):
+        capacities = [ergodic_capacity(Nr, Nt, snr, chan_type, 500) for snr in snr_range_db]
+        ax2.plot(snr_range_db, capacities, marker='s', label=chan_type, color=colors[idx])
+    ax2.set_xlabel('SNR (dB)')
+    ax2.set_ylabel('Ergodic capacity (bps/Hz)')
+    ax2.set_title('Capacity vs SNR for 4x4 MIMO under different channel models')
+    ax2.grid(True, alpha=0.3)
+    ax2.legend()
  
-# 子图3：容量随天线数增长（高SNR=20dB）
-ax3 = plt.subplot(2, 2, 3)
-snr_fixed = 20
-antenna_counts = np.arange(1, 9)  # 从1x1到8x8
-capacities_siso = []
-capacities_mimo = []
-for n in antenna_counts:
-    # SISO 容量
-    cap_siso = np.log2(1 + 10**(snr_fixed/10))
-    capacities_siso.append(cap_siso)
-    # NxN MIMO 容量（近似线性增长）
-    cap_mimo = ergodic_capacity(n, n, snr_fixed, 'rayleigh', 300)
-    capacities_mimo.append(cap_mimo)
+    # 子图3：容量随天线数增长（高SNR=20dB）
+    ax3 = plt.subplot(2, 2, 3)
+    snr_fixed = 20
+    antenna_counts = np.arange(1, 9)  # 从1x1到8x8
+    capacities_siso = []
+    capacities_mimo = []
+    for n in antenna_counts:
+        # SISO 容量
+        cap_siso = np.log2(1 + 10**(snr_fixed/10))
+        capacities_siso.append(cap_siso)
+        # NxN MIMO 容量（近似线性增长）
+        cap_mimo = ergodic_capacity(n, n, snr_fixed, 'rayleigh', 300)
+        capacities_mimo.append(cap_mimo)
  
-ax3.plot(antenna_counts, capacities_siso, 'b--o', label='SISO (Theory)')
-ax3.plot(antenna_counts, capacities_mimo, 'r-s', label='NxN MIMO (Simulation)')
-ax3.set_xlabel('Number of antenna (N)')
-ax3.set_ylabel(f'Capacity @ SNR={snr_fixed}dB (bps/Hz)')
-ax3.set_title('Capacity trend as number of antennas grows')
-ax3.grid(True, alpha=0.3)
-ax3.legend()
+    ax3.plot(antenna_counts, capacities_siso, 'b--o', label='SISO (Theory)')
+    ax3.plot(antenna_counts, capacities_mimo, 'r-s', label='NxN MIMO (Simulation)')
+    ax3.set_xlabel('Number of antenna (N)')
+    ax3.set_ylabel(f'Capacity @ SNR={snr_fixed}dB (bps/Hz)')
+    ax3.set_title('Capacity trend as number of antennas grows')
+    ax3.grid(True, alpha=0.3)
+    ax3.legend()
  
-plt.tight_layout()
-plt.show()
+    plt.tight_layout()
+    plt.show()

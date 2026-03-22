@@ -2,7 +2,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy import linalg
  
-print("环境准备就绪，NumPy版本：", np.__version__)
 
 def generate_rayleigh_channel(Nr, Nt, distance_km=0.1, carrier_freq_GHz=2.4):
     """
@@ -82,24 +81,25 @@ def generate_correlated_channel(Nr, Nt, correlation_coeff=0.3):
     H_corr = L_rx @ H_iid @ L_tx.T
     return H_corr
 
-# 比较不同信道模型
-Nr, Nt = 4, 4
-H_rayleigh = generate_rayleigh_channel(Nr, Nt)
-H_rician = generate_rician_channel(Nr, Nt, K_factor=5)
-H_correlated = generate_correlated_channel(Nr, Nt, correlation_coeff=0.7)
+if __name__ == "__main__":
+    # 比较不同信道模型
+    Nr, Nt = 4, 4
+    H_rayleigh = generate_rayleigh_channel(Nr, Nt)
+    H_rician = generate_rician_channel(Nr, Nt, K_factor=5)
+    H_correlated = generate_correlated_channel(Nr, Nt, correlation_coeff=0.7)
  
-fig, axes = plt.subplots(1, 3, figsize=(15, 4))
-im1 = axes[0].imshow(np.abs(H_rayleigh), cmap='hot', aspect='auto')
-axes[0].set_title('瑞利信道 (幅度)')
-plt.colorbar(im1, ax=axes[0])
+    fig, axes = plt.subplots(1, 3, figsize=(15, 4))
+    im1 = axes[0].imshow(np.abs(H_rayleigh), cmap='hot', aspect='auto')
+    axes[0].set_title('瑞利信道 (幅度)')
+    plt.colorbar(im1, ax=axes[0])
  
-im2 = axes[1].imshow(np.abs(H_rician), cmap='hot', aspect='auto')
-axes[1].set_title('莱斯信道 (K=5, 幅度)')
-plt.colorbar(im2, ax=axes[1])
+    im2 = axes[1].imshow(np.abs(H_rician), cmap='hot', aspect='auto')
+    axes[1].set_title('莱斯信道 (K=5, 幅度)')
+    plt.colorbar(im2, ax=axes[1])
  
-im3 = axes[2].imshow(np.abs(H_correlated), cmap='hot', aspect='auto')
-axes[2].set_title('相关信道 (ρ=0.7, 幅度)')
-plt.colorbar(im3, ax=axes[2])
+    im3 = axes[2].imshow(np.abs(H_correlated), cmap='hot', aspect='auto')
+    axes[2].set_title('相关信道 (ρ=0.7, 幅度)')
+    plt.colorbar(im3, ax=axes[2])
  
-plt.tight_layout()
-plt.show()
+    plt.tight_layout()
+    plt.show()
